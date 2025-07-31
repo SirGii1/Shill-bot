@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Solana Pay Service</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h1>Solana Service Payment</h1>
+
+  <button id="connectWallet">Connect Wallet</button>
+
+  <div id="services">
+    <button onclick="makePayment(0.1)">Buy Signal - 0.1 SOL</button>
+    <button onclick="makePayment(0.2)">Pro Signal - 0.2 SOL</button>
+  </div>
+
+  <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
