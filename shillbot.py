@@ -1,135 +1,123 @@
 import asyncio
-import logging
 import random
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
     ContextTypes,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
     filters,
 )
 
-# === SETTINGS ===
-BOT_TOKEN = '7614185922:AAFIZz6uXBuv-w4optpb3XTwTYaWDalsz78'  # Your bot token
-ADMIN_ID = 2051249497  # Your Telegram user ID
+# === CONFIGURATION ===
+BOT_TOKEN = '7614185922:AAFIZz6uXBuv-w4optpb3XTwTYaWDalsz78'
+ADMIN_ID = 2051249497
 
-# === GLOBAL VARIABLES ===
-shill_messages = ["🚀 Welcome to $DONT! Edit this with /add"]
+# === BOT STATE ===
+shill_messages = ["🚀 Welcome to $DONT!"]
 delay_seconds = 60
 shill_running = False
+waiting_for = None  # Keeps track of what input is expected (e.g. 'add' or 'delay')
 
-# === LOGGING ===
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
-)
+# === PANEL KEYBOARD ===
+def get_admin_panel():
+    keyboard = [
+        [InlineKeyboardButton("➕ Add Message", callback_data="add")],
+        [InlineKeyboardButton("📝 View Messages", callback_data="list")],
+        [InlineKeyboardButton("⏱ Set Delay", callback_data="set_delay")],
+        [InlineKeyboardButton("▶️ Start Shill", callback_data="start_shill")],
+        [InlineKeyboardButton("⏹ Stop Shill", callback_data="stop_shill")],
+        [InlineKeyboardButton("⏱ View Delay", callback_data="view_delay")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
-# === HANDLERS ===
+# === START HANDLER ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized.")
         return
 
-    await update.message.reply_text(
-        "🛠 Admin Panel\n\n"
-        "/add - Add new shill message\n"
-        "/list - Show messages\n"
-        "/setdelay - Set timer delay (in seconds)\n"
-        "/delay - Show current delay\n"
-        "/startshill - Start shilling\n"
-        "/stopshill - Stop shilling"
+    await context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text="👋 Welcome to your Shill Bot Admin Panel:",
+        reply_markup=get_admin_panel()
     )
 
-async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# === CALLBACK HANDLER ===
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global waiting_for, shill_running
+
+    query = update.callback_query
+    await query.answer()
+
+    if query.from_user.id != ADMIN_ID:
+        await query.edit_message_text("❌ You're not authorized.")
+        return
+
+    data = query.data
+
+    if data == "add":
+        waiting_for = "add"
+        await query.edit_message_text("✍️ Send the shill message you want to add:")
+    elif data == "list":
+        msg_list = "\n".join([f"{i+1}. {m}" for i, m in enumerate(shill_messages)])
+        await query.edit_message_text(f"📜 Current messages:\n\n{msg_list}", reply_markup=get_admin_panel())
+    elif data == "set_delay":
+        waiting_for = "delay"
+        await query.edit_message_text("⏱️ Send the new delay time in seconds:")
+    elif data == "view_delay":
+        await query.edit_message_text(f"⏱️ Current delay: {delay_seconds} seconds", reply_markup=get_admin_panel())
+    elif data == "start_shill":
+        if shill_running:
+            await query.edit_message_text("⚠️ Shilling already running.", reply_markup=get_admin_panel())
+        else:
+            shill_running = True
+            await query.edit_message_text("🚀 Shilling started!", reply_markup=get_admin_panel())
+            asyncio.create_task(shill_loop(context))
+    elif data == "stop_shill":
+        shill_running = False
+        await query.edit_message_text("🛑 Shilling stopped.", reply_markup=get_admin_panel())
+
+# === TEXT INPUT HANDLER ===
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global waiting_for, delay_seconds
+
     if update.effective_user.id != ADMIN_ID:
         return
 
-    await update.message.reply_text("✍️ Send the new shill message:")
+    text = update.message.text
 
-    async def get_msg(msg_update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        msg = msg_update.message.text
-        shill_messages.append(msg)
-        await msg_update.message.reply_text("✅ Message added.")
-        app.remove_handler(temp_handler)
-
-    temp_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, get_msg)
-    app.add_handler(temp_handler, 1)
-
-async def list_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    if not shill_messages:
-        await update.message.reply_text("📭 No shill messages yet.")
-        return
-
-    reply = "\n".join([f"{i+1}. {msg}" for i, msg in enumerate(shill_messages)])
-    await update.message.reply_text(f"📜 Current Messages:\n{reply}")
-
-async def set_delay(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    await update.message.reply_text("⏱️ Send new delay time in seconds:")
-
-    async def get_delay(msg_update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        global delay_seconds
+    if waiting_for == "add":
+        shill_messages.append(text)
+        await update.message.reply_text("✅ Message added.", reply_markup=get_admin_panel())
+    elif waiting_for == "delay":
         try:
-            delay_seconds = int(msg_update.message.text)
-            await msg_update.message.reply_text(f"✅ Delay set to {delay_seconds} seconds.")
+            delay_seconds = int(text)
+            await update.message.reply_text(f"✅ Delay set to {delay_seconds} seconds.", reply_markup=get_admin_panel())
         except:
-            await msg_update.message.reply_text("❌ Invalid input. Try again.")
-        app.remove_handler(temp_handler)
+            await update.message.reply_text("❌ Invalid number. Please try again.", reply_markup=get_admin_panel())
 
-    temp_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, get_delay)
-    app.add_handler(temp_handler, 1)
+    waiting_for = None
 
-async def show_delay(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    await update.message.reply_text(f"⏱️ Current delay: {delay_seconds} seconds")
-
-async def start_shilling(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global shill_running
-    if update.effective_user.id != ADMIN_ID:
-        return
-    if shill_running:
-        await update.message.reply_text("⚠️ Already shilling!")
-        return
-
-    await update.message.reply_text("🚀 Starting shill...")
-    shill_running = True
-    asyncio.create_task(shill_loop(context.application))
-
-async def stop_shilling(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global shill_running
-    if update.effective_user.id != ADMIN_ID:
-        return
-    shill_running = False
-    await update.message.reply_text("🛑 Shilling stopped.")
-
-async def shill_loop(app):
+# === SHILL LOOP ===
+async def shill_loop(context):
     global shill_running
     while shill_running:
         try:
             msg = random.choice(shill_messages)
-            await app.bot.send_message(chat_id=ADMIN_ID, text=f"📣 {msg}")
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"📣 {msg}")
             await asyncio.sleep(delay_seconds)
         except Exception as e:
-            logging.error(f"Error: {e}")
-            await asyncio.sleep(5)
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ Error: {e}")
+            await asyncio.sleep(10)
 
-# === MAIN SETUP ===
+# === SETUP BOT ===
 app = ApplicationBuilder().token(BOT_TOKEN).build()
-
 app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("add", add))
-app.add_handler(CommandHandler("list", list_messages))
-app.add_handler(CommandHandler("setdelay", set_delay))
-app.add_handler(CommandHandler("delay", show_delay))
-app.add_handler(CommandHandler("startshill", start_shilling))
-app.add_handler(CommandHandler("stopshill", stop_shilling))
+app.add_handler(CallbackQueryHandler(button_handler))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
 if __name__ == "__main__":
-    print("✅ Bot is running... Press Ctrl+C to stop")
+    print("✅ Bot is running...")
     app.run_polling()
