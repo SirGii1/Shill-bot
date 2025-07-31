@@ -15,7 +15,7 @@ document.getElementById("connectWallet").addEventListener("click", async () => {
 
 async function makePayment(amount) {
   const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('mainnet-beta'), 'confirmed');
-  const toPubkey = new solanaWeb3.PublicKey("YOUR_WALLET_ADDRESS"); // Replace this
+  const toPubkey = new solanaWeb3.PublicKey(DB9YZwXgNeQByab3bgJnJKrnYP7CtZGktrdnDRCLrKA3); // Replace this
 
   const transaction = new solanaWeb3.Transaction().add(
     solanaWeb3.SystemProgram.transfer({
